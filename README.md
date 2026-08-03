@@ -1,6 +1,6 @@
-# Product Recommendation System
+# Movie Recommendation System
 
-Full-stack product recommendation system built in phases using MovieLens 100K, PostgreSQL, PyTorch (NCF), Qdrant, Django, and Tailwind CSS.
+Full-stack movie recommendation system built in phases using MovieLens 100K, PostgreSQL, PyTorch (NCF), Qdrant, Django, and Tailwind CSS.
 
 ## Phase 1 — Data Layer (PostgreSQL)
 
