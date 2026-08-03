@@ -1,0 +1,18 @@
+# Service / deployment configuration (not model hyperparameters)
+database:
+  host: ${POSTGRES_HOST:-localhost}
+  port: ${POSTGRES_PORT:-5432}
+  name: ${POSTGRES_DB:-recommendations}
+  user: ${POSTGRES_USER:-recuser}
+  password: ${POSTGRES_PASSWORD:-recpass}
+
+etl:
+  dataset: movielens_100k
+  raw_data_dir: data/raw
+  min_rating_for_explicit: 1
+  implicit_rating_threshold: 3  # ratings >= this treated as positive implicit signal
+
+qdrant:
+  host: ${QDRANT_HOST:-localhost}
+  port: ${QDRANT_PORT:-6333}
+  collection_name: movie_embeddings

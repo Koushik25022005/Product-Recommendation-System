@@ -1,0 +1,27 @@
+# Model hyperparameters (separate from service/deployment config)
+model:
+  name: ncf
+  embedding_dim: 64
+  mlp_layers: [128, 64, 32]
+  dropout: 0.2
+
+training:
+  batch_size: 512
+  epochs: 15
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  num_negatives: 4
+  implicit_threshold: 4        # ratings >= threshold treated as positive implicit signal
+  split_strategy: time         # time | user
+  train_ratio: 0.8
+  val_ratio: 0.1
+  test_ratio: 0.1
+  eval_k: 10
+  eval_every: 1
+  seed: 42
+  device: auto                 # auto | cpu | cuda
+
+mlflow:
+  experiment_name: ncf-movielens100k
+  tracking_uri: ${MLFLOW_TRACKING_URI:-file:./mlruns}
+  registered_model_name: ncf-recommender

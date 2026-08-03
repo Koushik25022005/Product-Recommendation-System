@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Product Recommendation Engine — NCF + Qdrant</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            900: '#1e1b4b',
+                        },
+                        darkbg: '#0b0f19',
+                        darkcard: '#111827',
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0b0f19; color: #f3f4f6; }
+        .glass { background: rgba(17, 24, 39, 0.75); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+        .glass-card { background: rgba(31, 41, 55, 0.6); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        .glass-card:hover { border-color: rgba(99, 102, 241, 0.4); transform: translateY(-2px); transition: all 0.2s ease-in-out; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased">
+    <!-- Top Navigation -->
+    <header class="glass sticky top-0 z-50 border-b border-gray-800 px-6 py-4">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-6z" />
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold bg-gradient-to-r from-white via-gray-200 to-indigo-300 bg-clip-text text-transparent">
+                        MovieLens AI Recommender Engine
+                    </h1>
+                    <p class="text-xs text-gray-400">Neural Collaborative Filtering (PyTorch) + Qdrant Vector Retrieval</p>
+                </div>
+            </div>
+
+            <!-- Architecture Badges -->
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+                <span class="px-3 py-1.5 rounded-full bg-indigo-950/80 text-indigo-300 border border-indigo-800/50 flex items-center gap-1.5 font-medium">
+                    <span class="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span> PyTorch NCF
+                </span>
+                <span class="px-3 py-1.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-800/50 flex items-center gap-1.5 font-medium">
+                    <span class="w-2 h-2 rounded-full bg-purple-400"></span> Qdrant Similarity
+                </span>
+                <span class="px-3 py-1.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-800/50 flex items-center gap-1.5 font-medium">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400"></span> PostgreSQL DB
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-8">
+        
+        <!-- Controls & User Selection Bar -->
+        <section class="glass rounded-2xl p-6 shadow-xl">
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+                
+                <!-- Quick User Selector -->
+                <div class="md:col-span-5 space-y-2">
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-gray-400">Select Registered User</label>
+                    <select id="userSelect" onchange="onUserSelectChange()" class="w-full bg-gray-900 border border-gray-700 text-gray-100 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition">
+                        <option value="1">User #1 (Active Reviewer)</option>
+                        <option value="25">User #25 (Action Fan)</option>
+                        <option value="100">User #100 (Drama Enthusiast)</option>
+                        <option value="450">User #450 (Sci-Fi Buff)</option>
+                        <option value="943">User #943 (Classic Viewer)</option>
+                    </select>
+                </div>
+
+                <!-- Custom / Cold-Start User ID Input -->
+                <div class="md:col-span-5 space-y-2">
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-gray-400">
+                        Or Enter User ID (Test Cold-Start)
+                    </label>
+                    <div class="flex gap-2">
+                        <input type="number" id="customUserId" placeholder="e.g. 9999 (New User)" class="w-full bg-gray-900 border border-gray-700 text-gray-100 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition" />
+                        <button onclick="fetchRecommendations(document.getElementById('customUserId').value)" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-5 py-3 rounded-xl transition shadow-lg shadow-indigo-600/30 whitespace-nowrap">
+                            Fetch Recs
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Action Button -->
+                <div class="md:col-span-2 flex items-end">
+                    <button onclick="fetchCurrentRecommendations()" class="w-full bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 font-medium px-4 py-3 rounded-xl transition flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Refresh
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Cold-Start Banner (Hidden by default) -->
+        <div id="coldStartBanner" class="hidden rounded-2xl bg-amber-950/60 border border-amber-500/40 p-5 text-amber-200 flex items-start gap-4 shadow-lg">
+            <div class="p-2 bg-amber-900/80 rounded-xl text-amber-400">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+            </div>
+            <div class="flex-1">
+                <h3 class="font-bold text-amber-100 flex items-center gap-2">
+                    ❄️ Cold-Start User Activated
+                </h3>
+                <p id="coldStartText" class="text-sm text-amber-300/90 mt-1">
+                    This user has no historical interactions in the system. The recommendation engine automatically fell back to popularity-based ranking (highest rating volume × score).
+                </p>
+            </div>
+        </div>
+
+        <!-- Recommendations Grid Header & Meta -->
+        <section class="space-y-6">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-2xl font-bold text-gray-100 flex items-center gap-3">
+                        <span id="recTitleUser">Top Recommendations for User #1</span>
+                        <span id="recTypeBadge" class="text-xs px-3 py-1 rounded-full bg-indigo-900/60 text-indigo-300 border border-indigo-700">
+                            Neural Vector Similarity
+                        </span>
+                    </h2>
+                    <p class="text-xs text-gray-400 mt-1">Nearest cosine vectors retrieved from Qdrant 64D embedding space</p>
+                </div>
+                <div class="text-xs text-gray-400 bg-gray-900 px-4 py-2 rounded-xl border border-gray-800">
+                    Response time: <span id="respTime" class="font-mono text-emerald-400">-- ms</span>
+                </div>
+            </div>
+
+            <!-- Loading Spinner -->
+            <div id="loadingSpinner" class="hidden py-16 text-center space-y-3">
+                <div class="inline-block w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                <p class="text-sm text-gray-400">Querying Qdrant Vector Collection...</p>
+            </div>
+
+            <!-- Recommendations Grid -->
+            <div id="recommendationsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5">
+                <!-- Dynamic cards rendered by JS -->
+            </div>
+        </section>
+
+        <!-- Live Interaction Logger & API Inspector Section -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- Recent Logged Interactions -->
+            <div class="lg:col-span-6 glass rounded-2xl p-6 space-y-4">
+                <div class="flex items-center justify-between">
+                    <h3 class="font-bold text-gray-200 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+                        </svg>
+                        Real-time Interaction Log
+                    </h3>
+                    <span id="interactionCount" class="text-xs px-2.5 py-1 rounded-full bg-gray-800 text-gray-400">0 logged</span>
+                </div>
+                <div id="interactionList" class="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    <p class="text-xs text-gray-500 italic py-4 text-center">No interactions logged this session. Click "Rate 5★" or "Log Click" on any recommendation above.</p>
+                </div>
+            </div>
+
+            <!-- Raw API Response Inspector -->
+            <div class="lg:col-span-6 glass rounded-2xl p-6 space-y-4">
+                <div class="flex items-center justify-between">
+                    <h3 class="font-bold text-gray-200 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                        </svg>
+                        API Response Inspector
+                    </h3>
+                    <span class="text-xs text-gray-400 font-mono">GET /recommendations/&lt;id&gt;</span>
+                </div>
+                <pre id="apiJsonInspector" class="bg-gray-950 p-4 rounded-xl text-xs font-mono text-indigo-300 max-h-56 overflow-y-auto border border-gray-800">
+Select a user above to inspect the API payload.
+                </pre>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-gray-800 py-6 text-center text-xs text-gray-500">
+        Product Recommendation System — PyTorch NCF • Qdrant Vector DB • Django REST API
+    </footer>
+
+    <!-- Frontend Application Logic -->
+    <script>
+        let currentUserId = 1;
+        let loggedInteractions = [];
+
+        function onUserSelectChange() {
+            const val = document.getElementById('userSelect').value;
+            document.getElementById('customUserId').value = '';
+            fetchRecommendations(val);
+        }
+
+        function fetchCurrentRecommendations() {
+            fetchRecommendations(currentUserId);
+        }
+
+        async function fetchRecommendations(userId) {
+            if (!userId) return;
+            currentUserId = userId;
+
+            const grid = document.getElementById('recommendationsGrid');
+            const spinner = document.getElementById('loadingSpinner');
+            const coldBanner = document.getElementById('coldStartBanner');
+
+            grid.innerHTML = '';
+            spinner.classList.remove('hidden');
+            coldBanner.classList.add('hidden');
+
+            const startTime = performance.now();
+
+            try {
+                const res = await fetch(`/recommendations/${userId}`);
+                const data = await res.json();
+                const duration = Math.round(performance.now() - startTime);
+
+                document.getElementById('respTime').textContent = `${duration} ms`;
+                document.getElementById('apiJsonInspector').textContent = JSON.stringify(data, null, 2);
+                document.getElementById('recTitleUser').textContent = `Top Recommendations for User #${userId}`;
+
+                const badge = document.getElementById('recTypeBadge');
+                if (data.is_cold_start) {
+                    badge.textContent = '❄️ Cold-Start Fallback';
+                    badge.className = 'text-xs px-3 py-1 rounded-full bg-amber-950/80 text-amber-300 border border-amber-800/80';
+                    coldBanner.classList.remove('hidden');
+                    document.getElementById('coldStartText').textContent = data.message || 'New user with no historical ratings. Fallback to top popular items.';
+                } else {
+                    badge.textContent = '🔥 Neural Vector Similarity';
+                    badge.className = 'text-xs px-3 py-1 rounded-full bg-indigo-950/80 text-indigo-300 border border-indigo-800/80';
+                }
+
+                renderGrid(data.recommendations || []);
+            } catch (err) {
+                console.error('Error fetching recommendations:', err);
+                grid.innerHTML = `<div class="col-span-full py-8 text-center text-red-400 text-sm">Failed to load recommendations from server.</div>`;
+            } finally {
+                spinner.classList.add('hidden');
+            }
+        }
+
+        function renderGrid(items) {
+            const grid = document.getElementById('recommendationsGrid');
+            grid.innerHTML = '';
+
+            if (items.length === 0) {
+                grid.innerHTML = `<div class="col-span-full text-center py-8 text-gray-500">No items recommended.</div>`;
+                return;
+            }
+
+            items.forEach((item, index) => {
+                const title = item.title || 'Untitled Movie';
+                const genres = item.genres || [];
+                const score = item.score !== undefined ? item.score : '--';
+                const itemId = item.external_id || item.item_id || item.item_idx;
+
+                const genrePills = genres.slice(0, 2).map(g => 
+                    `<span class="text-[10px] px-2 py-0.5 rounded-md bg-gray-800 text-gray-300 border border-gray-700">${g}</span>`
+                ).join(' ');
+
+                const card = document.createElement('div');
+                card.className = 'glass-card rounded-2xl p-5 flex flex-col justify-between space-y-4 shadow-lg relative group';
+                card.innerHTML = `
+                    <div class="space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="w-7 h-7 rounded-lg bg-indigo-950 text-indigo-400 border border-indigo-800/60 text-xs font-bold flex items-center justify-center">
+                                #${index + 1}
+                            </span>
+                            <span class="text-xs font-mono px-2 py-1 rounded-lg bg-gray-900 text-emerald-400 border border-gray-800">
+                                Score: ${score}
+                            </span>
+                        </div>
+                        <h4 class="font-bold text-gray-100 text-sm line-clamp-2 leading-snug group-hover:text-indigo-300 transition">
+                            ${title}
+                        </h4>
+                        <div class="flex flex-wrap gap-1">
+                            ${genrePills}
+                        </div>
+                    </div>
+                    <div class="pt-2 border-t border-gray-800/60 flex items-center gap-2">
+                        <button onclick="logInteraction(${currentUserId}, ${itemId}, 5.0, 'rating')" class="flex-1 bg-indigo-600/30 hover:bg-indigo-600 text-indigo-200 hover:text-white text-xs font-medium py-2 rounded-xl border border-indigo-500/40 transition">
+                            Rate 5★
+                        </button>
+                        <button onclick="logInteraction(${currentUserId}, ${itemId}, 1.0, 'click')" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-medium py-2 rounded-xl border border-gray-700 transition">
+                            Log Click
+                        </button>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        async function logInteraction(userId, itemId, rating, signalType) {
+            try {
+                const res = await fetch('/interactions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        item_id: itemId,
+                        rating: rating,
+                        signal_type: signalType
+                    })
+                });
+                const data = await res.json();
+                
+                const list = document.getElementById('interactionList');
+                if (loggedInteractions.length === 0) {
+                    list.innerHTML = '';
+                }
+
+                loggedInteractions.unshift({
+                    user_id: userId,
+                    item_id: itemId,
+                    signal: signalType,
+                    rating: rating,
+                    time: new Date().toLocaleTimeString()
+                });
+
+                document.getElementById('interactionCount').textContent = `${loggedInteractions.length} logged`;
+
+                const entry = document.createElement('div');
+                entry.className = 'text-xs p-3 rounded-xl bg-gray-900/80 border border-gray-800 flex items-center justify-between text-gray-300 animate-fadeIn';
+                entry.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                        <span>User <strong>#${userId}</strong> logged <strong>${signalType}</strong> (rating: ${rating}) on Item <strong>#${itemId}</strong></span>
+                    </div>
+                    <span class="text-[10px] font-mono text-gray-500">${new Date().toLocaleTimeString()}</span>
+                `;
+                list.prepend(entry);
+            } catch (err) {
+                console.error('Failed to log interaction:', err);
+            }
+        }
+
+        // Initial Load
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchRecommendations(1);
+        });
+    </script>
+</body>
+</html>
